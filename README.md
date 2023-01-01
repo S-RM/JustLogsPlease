@@ -6,7 +6,7 @@ This solution optimises downloading data from Microsoft 365's Unified Audit Log 
 
 Microsoft imposes several limitations on external record collection, including:
 
-- Makings logs older than 7 days not accessible through their Management API
+- Makings logs older than 7 days not accessible through their Management API, forcing you to use an undocumented API through their `Search-UnifiedAuditLog` cmdlet.
 - Imposing a limit of the number of records you can download in a single session
 - Using rate-limiting / throttling to slow requests
 
