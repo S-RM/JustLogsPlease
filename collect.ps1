@@ -18,7 +18,7 @@ param (
     [string]$AppID,
 
     [parameter(Mandatory=$false)]
-    [string]$Organization
+    [string]$Org
 )
 
 # Import the functions from the functions.ps1 script.
@@ -26,9 +26,9 @@ param (
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
-if ($Thumbprint -or $AppID -or $Organization) {
+if ($Thumbprint -or $AppID -or $Org) {
     # Check if all of the required parameters are defined
-    if (-not ($Thumbprint -and $AppID -and $Organization)) {
+    if (-not ($Thumbprint -and $AppID -and $Org)) {
         throw "Error: All of the Thumbprint, AppID, and Organization parameters must be defined if any one of them is defined."
     }
     else {
@@ -137,9 +137,9 @@ $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
 if($AppAuthentication) {
 Connect-ExchangeOnline `
     -PSSessionOption $PSO `
-    -Thumbprint $Thumbprint `
+    -CertificateThumbPrint $Thumbprint `
     -AppID $AppID `
-    -Organization $Organization -ShowBanner:$false
+    -Organization $Org -ShowBanner:$false
 
     Write-Host "Connected to Exchange Online via Azure Application!"
 
