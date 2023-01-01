@@ -12,7 +12,7 @@ param (
     [switch]$Resume,
 
     [parameter(Mandatory=$false)]
-    [string]$CertificateThumbPrint,
+    [string]$CertThumbPrint,
 
     [parameter(Mandatory=$false)]
     [string]$AppID,
@@ -26,10 +26,10 @@ param (
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
-if ($CertificateThumbPrint -or $AppID -or $Organization) {
+if ($CertThumbprint -or $AppID -or $Organization) {
     # Check if all of the required parameters are defined
-    if (-not ($CertificateThumbPrint -and $AppID -and $Organization)) {
-        throw "Error: All of the CertificateThumbPrint, AppID, and Organization parameters must be defined if any one of them is defined."
+    if (-not ($CertThumbprint -and $AppID -and $Organization)) {
+        throw "Error: All of the CertThumbprint, AppID, and Organization parameters must be defined if any one of them is defined."
     }
     else {
         $AppAuthentication = $true
@@ -137,7 +137,7 @@ $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
 if($AppAuthentication) {
 Connect-ExchangeOnline `
     -PSSessionOption $PSO `
-    -CertificateThumbPrint $CertificateThumbPrint `
+    -CertThumbprint $CertThumbprint `
     -AppID $AppID `
     -Organization $Organization -ShowBanner:$false
 
