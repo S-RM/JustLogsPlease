@@ -22,8 +22,7 @@ You'll immediately be asked to authenticate into your Office365 tenant, and a 90
 | -Resume         | A flag that instructs the collection to resume a partially completed collection.                                                                                                                                                                                                        |
 | -Cert | If you are authenticating via an Azure App Registration (refer here for commentary), provide the thumbprint of the certificate authenticating your connection. Not required if you are signing in as a user.                                                                            |
 | -AppID          | The AppID of the Azure Application you are authenticating against.                                                                                                                                                                                                                      |
-| -Org   | Name of your tenant hosting your Azure Application, i,e., x6my8.onmicrosoft.com                                                                                                                                                                                                         |
-|                 |                                                                                                                                                                                                                                                                                         |
+| -Org   | Name of your tenant hosting your Azure Application, i,e., x6my8.onmicrosoft.com                                                                                     
 
 ## Why is this repo different?
 
