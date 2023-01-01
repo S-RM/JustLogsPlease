@@ -1,6 +1,6 @@
 # JustLogsPlease
 
-This solution optimises download time of Microsoft 365's Unified Audit Log and allows you to resume downloads without losing data, which is very useful for large collections. Simply run `.\collect.ps1` to start a collection.                                                                                
+This solution optimises downloading data from Microsoft 365's Unified Audit Log and allows you to resume downloads without losing progress, which is very useful for large collections. Simply run `.\collect.ps1` to get started.                                                  
 
 ## Why is this repo different?
 
