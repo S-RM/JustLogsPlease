@@ -9,11 +9,32 @@ param (
     # The maximum number of results to return from the log query.
     [int]$ResultSize = 1000,
     # A switch to indicate whether to resume from a previous query.
-    [switch]$Resume
+    [switch]$Resume,
+
+    [parameter(Mandatory=$false)]
+    [string]$CertificateThumbPrint,
+
+    [parameter(Mandatory=$false)]
+    [string]$AppID,
+
+    [parameter(Mandatory=$false)]
+    [string]$Organization
 )
 
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
+
+$AppAuthentication = $false
+# Check if any of the required parameters are defined
+if ($CertificateThumbPrint -or $AppID -or $Organization) {
+    # Check if all of the required parameters are defined
+    if (-not ($CertificateThumbPrint -and $AppID -and $Organization)) {
+        throw "Error: All of the CertificateThumbPrint, AppID, and Organization parameters must be defined if any one of them is defined."
+    }
+    else {
+        $AppAuthentication = $true
+    }
+}
 
 $TMPFILENAME = ".\collection.log"
 $DATAFILENAME = ".\UnifiedAuditLogs.json"
@@ -113,9 +134,21 @@ if ($missingModules) {
 # Setup long running session
 $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
 
-Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
+if($AppAuthentication) {
+Connect-ExchangeOnline `
+    -PSSessionOption $PSO `
+    -CertificateThumbPrint $CertificateThumbPrint `
+    -AppID $AppID `
+    -Organization $Organization -ShowBanner:$false
 
-Write-Host "Connected to Exchange Online!"
+    Write-Host "Connected to Exchange Online via Azure Application!"
+
+}
+else {
+    Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
+    Write-Host "Connected to Exchange Online!"
+}
+
 
 #######################################
 ### CHUNK TIME PERIODS
