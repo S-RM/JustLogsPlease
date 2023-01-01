@@ -1,0 +1,42 @@
+function Get-UALRecordTypes {
+
+    return @(
+        "AzureActiveDirectory",
+        "AzureActiveDirectoryAccountLogon",
+        "AzureActiveDirectoryStsLogon",
+        "ExchangeAdmin",
+        "ExchangeItem",
+        "ExchangeItemGroup",
+        "DataInsightsRestApiAudit",
+        "SharePoint",
+        "SharePointFileOperation",
+        "SharePointSharingOperation",
+        "OneDrive",
+        "MicrosoftTeams",
+        "ThreatIntelligence",
+        "ThreatFinder",
+        "SecurityComplianceAlerts",
+        "ThreatIntelligenceUrl",
+        "SecurityComplianceInsights",
+        "SharePointListOperation",
+        "ThreatIntelligenceAtpContent",
+        "ExchangeItemAggregated",
+        "MicrosoftTeamsDevice",
+        "MicrosoftTeamsAnalytics",
+        "ExchangeAggregatedOperation",
+        "MailSubmission",
+        "ComplianceDLPSharePointClassification",
+        "SharePointCommentOperation",
+        "DataGovernance",
+        "PowerBIAudit",
+        "DataCenterSecurityCmdlet",
+        "ComplianceDLPSharePoint",
+        "ComplianceDLPExchange",
+        "SharePointListItemOperation",
+        "SharePointContentTypeOperation",
+        "SharePointFieldOperation",
+        "MicrosoftTeamsAdmin",
+        "Quarantine"
+    )
+
+}
