@@ -1,8 +1,6 @@
 # JustLogsPlease
 
-For years, incident responders have looked up at the sky and dreamed of a world where pulling Office365 audit logs would be simple and efficient. Microsoft have really tried to make it difficult, but **JustLogsPlease** finally makes a seamless tenant-wide collection of the Unified Audit Logs possible.
-
-This solution optimises download time and allows you to resume downloads without losing data, which is very useful for large collections.                                                                                
+This solution optimises download time of Microsoft 365's Unified Audit Log and allows you to resume downloads without losing data, which is very useful for large collections. Simply run `.\collect.ps1` to start a collection.                                                                                
 
 ## Why is this repo different?
 
