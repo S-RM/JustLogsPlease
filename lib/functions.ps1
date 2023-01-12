@@ -112,8 +112,7 @@ function Get-UALChunks() {
 
 
         # Count total records for whole estate and check logging is enabled
-        $UnifiedSearch = "Search-UnifiedAuditLog -StartDate `"${StartDate}`" -EndDate `"${EndDate}`" -ResultSize 1"
-        $TenantTotalRecords = (Invoke-Expression $UnifiedSearch).ResultCount
+        $TenantTotalRecords = (Search-UnifiedAuditLog -StartDate $StartDate -EndDate ${EndDate} -ResultSize 1).ResultCount
 
         if(!($TenantTotalRecords) -or $TenantTotalRecords -lt 1) {
             Write-Host "Error: Logging may not be enabled, unable to identify logs to collect."
@@ -143,8 +142,7 @@ function Get-UALChunks() {
     ### Capture first iterations
     if($TotalRecords -lt 1) {
         # Get one log and count the total index
-        $UnifiedSearch = "Search-UnifiedAuditLog -StartDate `"${StartDate}`" -EndDate `"${EndDate}`" -RecordType ${CurrentRecordType} -ResultSize 1"
-        $TotalRecords = (Invoke-Expression $UnifiedSearch).ResultCount
+        $TotalRecords = (Search-UnifiedAuditLog -StartDate $StartDate -EndDate $EndDate -RecordType $CurrentRecordType -ResultSize 1).ResultCount
         
 
         ### There are no records of this record type to collect, move on
@@ -329,8 +327,7 @@ function Get-UALChunks() {
 
 
         # We have a time period, let's query and get the results
-        $UnifiedSearch = "Search-UnifiedAuditLog -StartDate `"${IterationStart}`" -EndDate `"${IterationEnd}`" -RecordType ${CurrentRecordType} -ResultSize 1"
-        $IterationRecords = (Invoke-Expression $UnifiedSearch).ResultCount
+        $IterationRecords = (Search-UnifiedAuditLog -StartDate $IterationStart -EndDate $IterationEnd -RecordType $CurrentRecordType -ResultSize 1).ResultCount
 
         if($IterationRecords -ge $ChunkSize -and $BreakFlag -eq $false) {
 
