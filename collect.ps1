@@ -7,7 +7,7 @@ param (
     # The end date for the log query. Must be specified if StartDate is also specified.
     [string]$EndDate = $null,
     # The maximum number of results to return from the log query.
-    [int]$ResultSize = 1000,
+    [int]$ResultSize = 5000,
     # A switch to indicate whether to resume from a previous query.
     [switch]$Resume,
 
@@ -36,9 +36,9 @@ if ($Cert -or $AppID -or $Org) {
     }
 }
 
-$TMPFILENAME = ".\collection.log"
-$DATAFILENAME = ".\UnifiedAuditLogs.json"
-$CHUNKFILENAME = ".\chunks.json"
+$TMPFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\collection.log"
+$DATAFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\UnifiedAuditLogs.json"
+$CHUNKFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\chunks.json"
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
@@ -139,14 +139,11 @@ Connect-ExchangeOnline `
     -PSSessionOption $PSO `
     -CertificateThumbPrint $Cert `
     -AppID $AppID `
-    -Organization $Org -ShowBanner:$false
-
-    Write-Host "Connected to Exchange Online via Azure Application!"
-
+    -Organization $Org `
+    -ShowBanner:$false
 }
 else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
-    Write-Host "Connected to Exchange Online!"
 }
 
 
@@ -300,7 +297,8 @@ try {
                     -EndDate $($LogObject.End) `
                     -RecordType $($LogObject.RecordType) `
                     -SessionID $SessionID `
-                    -SessionCommand ReturnNextPreviewPage `
+                    -SessionCommand ReturnLargeSet `
+                    -Formatted `
                     -ResultSize $ResultSize
 
                 # If we have a valid response
@@ -320,7 +318,8 @@ try {
                     
                     # Send the results to file output
                     $UALResponse | ForEach-Object {
-                        $LogWriter.WriteLine($_.AuditData)
+                        $line = $_.AuditData -replace "`n","" -replace "`r","" -replace "  ", ""
+                        $LogWriter.WriteLine($line)
                     }
 
                     # Flush cache
