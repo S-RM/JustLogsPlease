@@ -289,6 +289,9 @@ try {
 
             $count = 0
 
+            ## TODO: Re-attempt collection if numbers dont match
+            ## TODO: Run in batches, but only update chunk when all complete
+
             while ($true) {
 
                 ##########################################
