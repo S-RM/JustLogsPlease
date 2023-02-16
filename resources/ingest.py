@@ -28,6 +28,7 @@ def submit_to_LAW(endpoint_uri, dcr_id, access_token, log_type, log):
 
     raise Exception(f"Failed to submit log after {max_retries} retries. {e}")
 
+# Grab access token
 tenant_id = os.environ["tenantId"]
 app_id = os.environ["appId"]
 app_secret = os.environ["appSecret"]
