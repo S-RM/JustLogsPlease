@@ -36,9 +36,9 @@ if ($Cert -or $AppID -or $Org) {
     }
 }
 
-$TMPFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\collection.log"
-$DATAFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\UnifiedAuditLogs.json"
-$CHUNKFILENAME = "C:\Users\Sankgreall\Documents\AzureDevOps\JustLogsPlease\chunks.json"
+$TMPFILENAME = (Resolve-Path ".\collection.log").Path
+$DATAFILENAME = (Resolve-Path ".\UnifiedAuditLogs.json").Path
+$CHUNKFILENAME = (Resolve-Path ".\chunks.json").Path
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
