@@ -44,26 +44,30 @@ $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
 $chunkFileExists = Test-Path -Path $CHUNKFILENAME
 
-if ($tmpFileExists -or $dataFileExists -or $chunkFileExists) {
-    $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
-    $deleteChoice = Read-Host -Prompt $deletePrompt
-
-    if ($deleteChoice -eq "Y" -or $deleteChoice -eq "y") {
-        if ($tmpFileExists) {
-            Remove-Item -Path $TMPFILENAME -Force | Out-Null
+# If we are not resuming
+if(!$Resume) {
+    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists) {
+        $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
+        $deleteChoice = Read-Host -Prompt $deletePrompt
+    
+        if ($deleteChoice -eq "Y" -or $deleteChoice -eq "y") {
+            if ($tmpFileExists) {
+                Remove-Item -Path $TMPFILENAME -Force | Out-Null
+            }
+            if ($dataFileExists) {
+                Remove-Item -Path $DATAFILENAME -Force | Out-Null
+            }
+            if ($chunkFileExists) {
+                Remove-Item -Path $CHUNKFILENAME -Force | Out-Null
+            }
         }
-        if ($dataFileExists) {
-            Remove-Item -Path $DATAFILENAME -Force | Out-Null
+        else {
+            Write-Host "Re-run the command using the -Resume flag."
+            exit
         }
-        if ($chunkFileExists) {
-            Remove-Item -Path $CHUNKFILENAME -Force | Out-Null
-        }
-    }
-    else {
-        Write-Host "Re-run the command using the -Resume flag."
-        exit
     }
 }
+
 
 #######################################
 ### CHECK INPUT PARAMETERS
