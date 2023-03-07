@@ -3,6 +3,70 @@
 # Assign the array of record types
 $RecordTypes = Get-UALRecordTypes
 
+function Get-MD5Hash([string]$String) {
+
+    $hasher = new-object System.Security.Cryptography.MD5CryptoServiceProvider
+    $toHash = [System.Text.Encoding]::UTF8.GetBytes($String)
+    $hashByteArray = $hasher.ComputeHash($toHash)
+    foreach($byte in $hashByteArray)
+    {
+      $result += "{0:X2}" -f $byte
+    }
+    return $result;
+ }
+function Send-ToMongoDB {
+    Param(
+        $MongoHost="https://apie3882a5b.azurewebsites.net",
+        $collection,
+        $operation="PUT",
+        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Data
+    )
+
+    $url = "${MongoHost}/api/${collection}?code=${Code}"
+    $headers = @{"Content-Type"="application/json"}
+    $body = ConvertTo-Json -InputObject $Data -Depth 20
+
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method $operation -Headers $headers -Body $body
+        return $response
+    }
+    catch {
+        Write-Host "Error sending data to MongoDB: $_"
+        return $null
+    }
+}
+
+function Get-FromMongoDB {
+    Param(
+        $MongoHost="https://apie3882a5b.azurewebsites.net",
+        $collection="chunks",
+        $operation="GET",
+        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Next = ""
+    )
+
+    $params = "&sort=_id&orderby=asc" # Ensure chunks are processed in order they are created
+
+    # Add next page reference if defined
+    if($Next -ne ""){ 
+        $params = "${params}&next=${Next}"
+    }
+
+    # Create the URL
+    $url = "${MongoHost}/api/list/${collection}?code=${Code}&${params}"
+    $headers = @{"Content-Type"="application/json"}
+
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method $operation -Headers $headers
+        return $response.data
+    }
+    catch {
+        Write-Host "Error reading data to MongoDB: $_"
+        return $null
+    }
+}
+
 function Get-DateObjectFromString {
 
     Param 
@@ -82,7 +146,8 @@ function Get-UALChunks() {
         $IterationCount=0,
         $IterationModifier=1,
         $RecordTypes=$RecordTypes,
-        [string]$CurrentRecordType=""
+        [string]$CurrentRecordType="",
+        $Org
     )
 
     # TODO: Foreach record type up here instead
@@ -148,9 +213,10 @@ function Get-UALChunks() {
                 End = $EndDate.ToString('yyyy-MM-ddTHH:mm:ss')
                 RecordType = $CurrentRecordType
                 RecordCount = $TotalRecords
+                Tenant = $Org
             }
 
-            Write-ToFile -log $Chunk
+            $response = Send-ToMongoDB -collection "chunks" -Data $Chunk
         }
 
         ############################################
@@ -218,7 +284,7 @@ function Get-UALChunks() {
                     # Increase iteration modifier 
                     $IterationModifier = $IterationModifier / 0.8
         
-                    # Assume unull response means 0
+                    # Assume null response means 0
                     if($null -eq $IterationRecords) {
                         $IterationRecords = 0
                     }
@@ -229,6 +295,7 @@ function Get-UALChunks() {
                         End = $IterationEnd.ToString('yyyy-MM-ddTHH:mm:ss')
                         RecordType = $CurrentRecordType
                         RecordCount = $IterationRecords
+                        Tenant = $Org
                     }
 
                     Write-Host ""
@@ -239,8 +306,8 @@ function Get-UALChunks() {
                     # CLEAN UP LOOP ITERATION
                     ############################################
 
-                    # Write chunk to file
-                    Write-ToFile -log $PreviousChunk
+                    # Send to mongodb
+                    Send-ToMongoDB -collection "chunks" -Data $Chunk
 
                     # Increase chunk count
                     $ChunkCount += 1
@@ -258,12 +325,3 @@ function Get-UALChunks() {
 
 }
 
-function Write-ToFile {
-    Param(
-        $filename = "chunks.json",
-        $log
-    )
-
-    $jsonString = $log | ConvertTo-Json -Compress
-    Add-Content -Path $filename -Value $jsonString
-}

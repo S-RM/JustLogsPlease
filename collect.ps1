@@ -7,7 +7,7 @@ param (
     # The end date for the log query. Must be specified if StartDate is also specified.
     [string]$EndDate = $null,
     # The maximum number of results to return from the log query.
-    [int]$ResultSize = 5000,
+    [int]$ResultSize = 1000,
     # A switch to indicate whether to resume from a previous query.
     [switch]$Resume,
 
@@ -19,6 +19,8 @@ param (
 
     [parameter(Mandatory=$false)]
     [string]$Org
+
+    # Add function key for mongorest api
 )
 
 # Import the functions from the functions.ps1 script.
@@ -33,38 +35,6 @@ if ($Cert -or $AppID -or $Org) {
     }
     else {
         $AppAuthentication = $true
-    }
-}
-
-$TMPFILENAME = (Resolve-Path ".\collection.log").Path
-$DATAFILENAME = (Resolve-Path ".\UnifiedAuditLogs.json").Path
-$CHUNKFILENAME = (Resolve-Path ".\chunks.json").Path
-
-$tmpFileExists = Test-Path -Path $TMPFILENAME
-$dataFileExists = Test-Path -Path $DATAFILENAME
-$chunkFileExists = Test-Path -Path $CHUNKFILENAME
-
-# If we are not resuming
-if(!$Resume) {
-    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists) {
-        $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
-        $deleteChoice = Read-Host -Prompt $deletePrompt
-    
-        if ($deleteChoice -eq "Y" -or $deleteChoice -eq "y") {
-            if ($tmpFileExists) {
-                Remove-Item -Path $TMPFILENAME -Force | Out-Null
-            }
-            if ($dataFileExists) {
-                Remove-Item -Path $DATAFILENAME -Force | Out-Null
-            }
-            if ($chunkFileExists) {
-                Remove-Item -Path $CHUNKFILENAME -Force | Out-Null
-            }
-        }
-        else {
-            Write-Host "Re-run the command using the -Resume flag."
-            exit
-        }
     }
 }
 
@@ -155,260 +125,185 @@ else {
 ### CHUNK TIME PERIODS
 #######################################
 
-### If the switch to resume IS NOT set, start new chunk
-if(!$Resume) {
-    Get-UALChunks -StartDate $StartDate -EndDate $EndDate
+Get-UALChunks -StartDate $StartDate -EndDate $EndDate -Org $Org
 
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "Chunking complete! Starting collection..."
-    Write-Host "#####################################################"
-    Write-Host ""
-}
-
-### If the switch is set to resume
-else {
-
-    # Check if $TMPFILENAME exists
-    if (!(Test-Path -Path $TMPFILENAME)) {
-        Write-Output "Error: ${TMPFILENAME} does not exist"
-        exit
-    }
-
-    # Check if $CHUNKFILENAME exists
-    if (!(Test-Path -Path $CHUNKFILENAME)) {
-        Write-Output "Error: ${$CHUNKFILENAME} does not exist"
-        exit
-    }
-
-    # Get last line from tmp
-    $lastLine = Get-Content $TMPFILENAME -Tail 1 | ConvertFrom-Json
-
-    $LineNumber = 0
-
-    # Open the file for reading
-    $reader = [System.IO.File]::OpenText($CHUNKFILENAME)
-
-    while ($line = $reader.ReadLine()) {
-        # Parse the date we want to match
-        $line = $line | ConvertFrom-Json
-    
-        if([datetime]$line.Start -eq $lastLine.Start -and $lastLine.RecordType -eq $line.RecordType) {
-            Write-Host "[INFO] -- Found resume point!"
-            $LogObject = $lastLine
-            break
-        }
-        # Increment line number
-        $LineNumber++
-    }
-    
-    # Close the file when we're done
-    $reader.Close()
-
-    if($null -eq $LogObject) {
-        Write-Error "Unable to resume operation, please retry without the -Resume flag"
-    }
-}
+Write-Host ""
+Write-Host "#####################################################"
+Write-Host "Chunking complete! Starting collection..."
+Write-Host "#####################################################"
+Write-Host ""
 
 #######################################
-### SET VARIABLES AND HANDLERS
+### COLLECT LOGS
 #######################################
 
-# Open handle to TMP file
-$TmpWriter = New-Object System.IO.StreamWriter $TMPFILENAME, $true
-
-# Open the chunk file for reading
-$FileStream = [System.IO.File]::Open($CHUNKFILENAME, 'OpenOrCreate', 'ReadWrite')
-$StreamReader = New-Object System.IO.StreamReader $FileStream
-
-# Open the data file for writing
-$LogWriter = New-Object System.IO.StreamWriter $DATAFILENAME, $true
-
-
-#######################################
-### PREPARE FOR RESUMING IF REQUIRED
-#######################################
-
-# TODO: Set variable earlier
-if($Resume) {
-
-    # Set resume breaker to track first loop
-    $ResumeBreaker = $false
-
-    $lineCounter = 0
-    # Seek to the correct position in $CHUNKFILENAME file, as we resume from there
-    # Use a loop to read each line in the file
-    while (($line = $StreamReader.ReadLine()) -ne $null) {
-        if ($lineCounter -eq $lineNumber - 1) {
-            # If the counter matches the desired line number, exit the loop
-            break
-        }
-        # Increment the counter
-        $lineCounter++
-    }
-
-}
-
-# Else, line number is 0
-else {
-    $LineNumber = 0
-}
-
+# Pull chunks in pages (memory efficient)
+$LastId = ""
 try {
+    while ($true) {
 
-    # Read lines from the file until the end position is reached
-    while (!$StreamReader.EndOfStream) {
+        # If no next page (first execution)
+        if($LastId -eq "") {
+            $Chunks = Get-FromMongoDB # Pulls (by server default) first 10 records
+        }
 
-        # Read the next line from the file
-        $LogLine = $StreamReader.ReadLine()
-
-        # # Parse the JSON from the line
-        if($null -ne $LogLine) {
-
-            # If we are resuming, inject the correct start point
-            if($Resume -and !$ResumeBreaker) {
-                $LogObject = $LogObject
-                $ResumeBreaker = $true
-            }
-
-            # Otherwise, parse from log
-            else {
-                $LogObject = ConvertFrom-Json $LogLine
-            }
-
-            # If there are no record, continue
-            if ($LogObject.RecordCount -eq 0) {
-                continue
-            }
+        # Else, get next page
+        else {
+            # Grab next page
+            $Chunks = Get-FromMongoDB -Next $LastId # Pulls (by server default) first 10 records
+        }
+    
+        # Is there data?
+        if($Chunks.Length -gt 0) {
+    
+            # Get the last ID, used for next page
+            $LastId = ($Chunks[-1])._id
+    
+             # Proceed with processing
+             $Chunks | ForEach-Object {
+    
+                $LogObject = $_
             
-            # Invoke the UAL query
-            Write-Host "[INFO] -- Collecting $($LogObject.RecordType) records between $($LogObject.Start) and $($LogObject.End)"
-
-            # Create session ID
-            $SessionID = [Guid]::NewGuid().ToString()
-
-            $count = 0
-
-            ## TODO: Re-attempt collection if numbers dont match
-            ## TODO: Run in batches, but only update chunk when all complete
-
-            while ($true) {
-
-                ##########################################
-                ### EXECUTE QUERY
-                ##########################################
-
-                # Execute the query
-                $UALResponse = Search-UnifiedAuditLog `
-                    -StartDate $($LogObject.Start) `
-                    -EndDate $($LogObject.End) `
-                    -RecordType $($LogObject.RecordType) `
-                    -SessionID $SessionID `
-                    -SessionCommand ReturnLargeSet `
-                    -Formatted `
-                    -ResultSize $ResultSize
-
-                # If we have a valid response
-                if($UALResponse -ne $null) {
-
-                    ##########################################
-                    ### PROCESS QUERY RESULTS
-                    ##########################################
-
-                    # Output the total count on the first iteratiion
-                    if($count -eq 0) {
-                        $ResultCount = $UALResponse[0].ResultCount
-                    }
-
-                    # Count the results within this iteration and add to rolling total
-                    $count += $UALResponse.Count       
-                    
-                    # Send the results to file output
-                    $UALResponse | ForEach-Object {
-                        $line = $_.AuditData -replace "`n","" -replace "`r","" -replace "  ", ""
-                        $LogWriter.WriteLine($line)
-                    }
-
-                    # Flush cache
-                    $LogWriter.Flush()
-
-                    ##########################################
-                    ### CONTRUCT TMP FILE LINE
-                    ##########################################
-
-                    # Modify the line object with new properties
-                    $NewEndDate = $UALResponse[-1].CreationDate
-
-                    # Modify LogObject
-                    $NewLogObject = $LogObject
-                    $NewLogObject.End = $NewEndDate
-                    $NewLogObject.RecordCount = $UALResponse.Count
-
-                    # Write new object file
-                    $jsonString = $NewLogObject | ConvertTo-Json
-                    $jsonString = $jsonString -replace "`n","" -replace "`r","" -replace "  ", ""
-
-                    $bytes = ([System.Text.Encoding]::UTF8).GetBytes($jsonString)
-                    $TmpWriter.WriteLine($bytes, 0, $bytes.Length)
-
-                    ##########################################
-                    ### CONCLUDE ITERATION
-                    ##########################################
-
-                    if($count -ge $ResultCount) {
-                        Write-Host "[INFO] -- Collected ${count}/${ResultCount} $($LogObject.RecordType) records within time period"
-                        break
-                    }
+                # If there are no records, continue
+                if ($LogObject.RecordCount -eq 0) {
+                    continue
                 }
+            
+                # Invoke the UAL query
+                Write-Host "[INFO] -- Collecting $($LogObject.RecordType) records between $($LogObject.Start) and $($LogObject.End)"
+            
+                # Create session ID
+                $SessionID = [Guid]::NewGuid().ToString()
+            
+                $count = 0
+            
+                ## TODO: Re-attempt collection if numbers dont match
+                ## TODO: Run in batches, but only update chunk when all complete
+            
+                # Set error counter
+                $ErrorCounter = 0
+                # Delay time when error is hit
+                $ErrorDelay = 60
 
-                else {
-
-                    # Have we completed collection, or are there no logs within time period?
-                    if($count -eq 0) {
-                        Write-Host "No logs within time period."
+                while ($true) {
+            
+                    ##########################################
+                    ### EXECUTE QUERY
+                    ##########################################
+            
+                    # Execute the query
+                    $UALResponse = Search-UnifiedAuditLog `
+                        -StartDate $($LogObject.Start) `
+                        -EndDate $($LogObject.End) `
+                        -RecordType $($LogObject.RecordType) `
+                        -SessionID $SessionID `
+                        -SessionCommand ReturnLargeSet `
+                        -Formatted `
+                        -ResultSize $ResultSize
+            
+                    # If we have a valid response
+                    if($UALResponse -ne $null) {
+            
+                        ##########################################
+                        ### PROCESS QUERY RESULTS
+                        ##########################################
+            
+                        # Output the total count of record in this time period
+                        # Tjis will match the RecordCount of our chunk
+                        if($count -eq 0) {
+                            $ResultCount = $UALResponse[0].ResultCount
+                        }
+            
+                        # Count the results returned within this iteration
+                        # add to rolling total for this period
+                        $count += $UALResponse.Count       
+                        
+                        # Prepare a batch of all records
+                        $LogBatch = @()
+                        $UALResponse | ForEach-Object {
+        
+                            # Calculate ID field
+                            $StringValue = $_.AuditData
+                            $LogLine = ($_.AuditData | ConvertFrom-Json -Depth 20)
+                            $id = Get-MD5Hash -String $StringValue
+                            
+                            # Add id to field
+                            $LogLine | Add-Member -MemberType NoteProperty -Name '_id' -Value $id -Force
+                            # Add org to field
+                            $LogLine | Add-Member -MemberType NoteProperty -Name 'tenant' -Value $Org -Force
+        
+                            # Add to batch
+                            $LogBatch += $LogLine
+                        }
+        
+                        # Send batch to mongo
+                        $response = Send-ToMongoDB -collection "records" -Data $LogBatch
+            
+                        ##########################################
+                        ### CONCLUDE ITERATION
+                        ##########################################
+            
+                        if($count -eq $ResultCount) {
+                            Write-Host "[INFO] -- Collected ${count}/${ResultCount} $($LogObject.RecordType) records within time period"
+                            
+                            # TODO: Update chunk with successs
+                            
+                            break
+                        }
                     }
-
+            
                     else {
-                        Write-Host " [INFO] -- Collected ${count}/${ResultCount} $($LogObject.RecordType) records within time period"                        
+
+                        # We have returned 0 records. This should not happen, as 
+                        # chunks are defined only for periods with > 0 records.
+
+                        # Only solution is to retry the entire period again
+                        # Sometimes we can weirdly get MORE records, so do != comparison
+                        if($count -ne $LogObject.RecordCount) {
+
+                            # Chunk is incomplete! Definitely error
+                            if($ErrorCounter -lt 3)
+                            {
+                                # Generate a new session id, and add a delay to loop
+                                $SessionID = [Guid]::NewGuid().ToString()
+                                Start-Sleep -Seconds ($ErrorDelay * $ErrorCounter)
+                                $ErrorCounter += 1
+                            }
+                            else {
+                                # Error counter hit
+                                # TODO: Mark chunk as polluted, move on
+                                Write-Host " [ERROR] -- Chunk polluted. ${count}/${ResultCount} $($LogObject.RecordType) records collected"                        
+                                break
+                            }
+
+                        }
+                        else {
+                            # All is fine, just weird glitch but we have the records.
+                            break
+                        }
                     }
-
-                    # Write new object file
-                    $jsonString = $LogObject | ConvertTo-Json
-                    $jsonString = $jsonString -replace "`n","" -replace "`r","" -replace "  ", ""
-
-                    $bytes = ([System.Text.Encoding]::UTF8).GetBytes($jsonString)
-                    $TmpWriter.WriteLine($bytes, 0, $bytes.Length)
-
-                    break
                 }
-                
-
             }
-
-            # Track the line number
-            $LineNumber += 1
-        }     
-
+        
+    
+        }
+    
+        # Else, break loop
+        else {
+            Write-Host ""
+            Write-Host "#####################################################"
+            Write-Host "################ COLLECTION COMPLETE ################"
+            Write-Host "#####################################################"
+            Write-Host ""
+    
+            break
+        }
     }
-
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "################ COLLECTION COMPLETE ################"
-    Write-Host "#####################################################"
-    Write-Host ""
-
 }
+
+
 
 finally {
-
-    # Close handles on file
-    $TmpWriter.Close()
-
-    # Close the StreamReader and FileStream
-    $FileStream.Close()
-
-    # Close the StreamReader and FileStream
-    $LogWriter.Close()
 
     Disconnect-ExchangeOnline -Confirm:$false
 
