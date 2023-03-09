@@ -120,12 +120,59 @@ else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
 }
 
+#######################################
+### ONBOARD TENANT
+#######################################
+
+# TODO: Check if tenant exists, otherwise add. 
+# If exists, we are resuming
+
+$filter = @{
+    "tenant" = "${Org}"
+}
+$response = Get-FromMongoDB -collection "tenants" -Filter $filter
+
+if($response.Length -eq 0) {
+
+    # Create tenant record
+    $TenantRecord = @{
+        Start = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+        End = "" # Undefined yet
+        Tenant = "${Org}"
+        Status = "Onboarding"
+        TotalRecords = ""  # Unknown yet
+    }
+    $response = Send-ToMongoDB -collection "tenants" -Data $TenantRecord
+
+    # Add ID to record
+    $TenantRecord['_id'] = $response.data
+}
+
+else {
+    $TenantRecord = @{
+        _id = $response._id
+        Start = $response.Start
+        End = $response.End
+        Tenant = $response.Tenant
+        Status = $response.Status
+        TotalRecords = $response.TotalRecords
+    }
+
+}
+
 
 #######################################
 ### CHUNK TIME PERIODS
 #######################################
 
-Get-UALChunks -StartDate $StartDate -EndDate $EndDate -Org $Org
+$TenantRecord['Status'] = "Chunking"
+$response = Update-MongoDB -collection "tenants" -Data $TenantRecord 
+
+Get-UALChunks `
+    -StartDate $StartDate `
+    -EndDate $EndDate `
+    -Org $Org `
+    -TenantRecord $TenantRecord 
 
 Write-Host ""
 Write-Host "#####################################################"
@@ -137,8 +184,16 @@ Write-Host ""
 ### COLLECT LOGS
 #######################################
 
+$TenantRecord['Status'] = "Collecting"
+$response = Update-MongoDB -collection "tenants" -Data $TenantRecord
+
 # Pull chunks in pages (memory efficient)
 $LastId = ""
+# Only get uncompleted chunks
+$filter = @{
+    Status = "Not Started|Processing"
+}
+
 try {
     while ($true) {
 
@@ -162,7 +217,23 @@ try {
              # Proceed with processing
              $Chunks | ForEach-Object {
     
-                $LogObject = $_
+                # Move LogObject to a PSObject
+                $LogObject = @{
+                    _id = $_._id
+                    Tenant = $_.Tenant
+                    End = $_.End
+                    RecordType = $_.RecordType
+                    Start = $_.Start
+                    ProcessingStart = $_.ProcessingStart
+                    ProcessingEnd = $_.ProcessingEnd
+                    RecordCount = $_.RecordCount
+                    Status = $_.Status
+                }
+
+                # Set status of chunk
+                $LogObject['Status'] = "Processing"
+                $LogObject['ProcessingStart'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+                $response = Update-MongoDB -collection "chunks" -Data $LogObject 
             
                 # If there are no records, continue
                 if ($LogObject.RecordCount -eq 0) {
@@ -175,15 +246,19 @@ try {
                 # Create session ID
                 $SessionID = [Guid]::NewGuid().ToString()
             
+                # Rolling count of records per chunk
                 $count = 0
-            
-                ## TODO: Re-attempt collection if numbers dont match
-                ## TODO: Run in batches, but only update chunk when all complete
             
                 # Set error counter
                 $ErrorCounter = 0
                 # Delay time when error is hit
                 $ErrorDelay = 60
+                # Set max errors
+                $MaxErrors = 4
+                # Error flag
+                $ErrorFlag = $false
+                # Error message
+                $ErrorMessage = ""
 
                 while ($true) {
             
@@ -245,10 +320,18 @@ try {
             
                         if($count -eq $ResultCount) {
                             Write-Host "[INFO] -- Collected ${count}/${ResultCount} $($LogObject.RecordType) records within time period"
-                            
-                            # TODO: Update chunk with successs
+                            # Set status of chunk to complete
+                            $LogObject['Status'] = "Complete"
+                            $LogObject['ProcessingEnd'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+                            $response = Update-MongoDB -collection "chunks" -Data $LogObject 
                             
                             break
+                        }
+
+                        elseif ($count -gt $ResultCount) {
+                            # This is an error, clear and start again.
+                            $ErrorFlag = $true
+                            $ErrorMessage = "Too many collected records."
                         }
                     }
             
@@ -260,36 +343,61 @@ try {
                         # Only solution is to retry the entire period again
                         # Sometimes we can weirdly get MORE records, so do != comparison
                         if($count -ne $LogObject.RecordCount) {
-
                             # Chunk is incomplete! Definitely error
-                            if($ErrorCounter -lt 3)
-                            {
-                                # Generate a new session id, and add a delay to loop
-                                $SessionID = [Guid]::NewGuid().ToString()
-                                Start-Sleep -Seconds ($ErrorDelay * $ErrorCounter)
-                                $ErrorCounter += 1
-                            }
-                            else {
-                                # Error counter hit
-                                # TODO: Mark chunk as polluted, move on
-                                Write-Host " [ERROR] -- Chunk polluted. ${count}/${ResultCount} $($LogObject.RecordType) records collected"                        
-                                break
-                            }
-
+                            $ErrorFlag = $true
+                            $ErrorMessage = "Returned null response."
                         }
                         else {
                             # All is fine, just weird glitch but we have the records.
                             break
                         }
                     }
+
+                    ##########################################
+                    ### HANDLE ERRORS
+                    ##########################################
+
+                    if($ErrorFlag -eq $true) {
+
+                        if($ErrorCounter -lt $MaxErrors)
+                        {
+                            Write-Host " [WARN] -- ${ErrorMessage}. Waiting and trying again."
+
+                            # Generate a new session id, and add a delay to loop
+                            $SessionID = [Guid]::NewGuid().ToString()
+                            Start-Sleep -Seconds ($ErrorDelay * ($ErrorCounter + 1))
+                            $ErrorCounter += 1
+
+                            # Revert flag
+                            $ErrorFlag = $false
+                            # Revert message
+                            $ErrorMessage = ""
+
+                        }
+                        else {
+                            # Error counter hit
+                            # TODO: Mark chunk as polluted, move on
+                            Write-Host " [ERROR] -- Chunk polluted. ${count}/${ResultCount} $($LogObject.RecordType) records collected"                        
+                            
+                            # Update status of chunk
+                            $LogObject['Status'] = "Polluted"
+                            $LogObject['ProcessingEnd'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+                            $response = Update-MongoDB -collection "chunks" -Data $LogObject 
+                            break
+                        }    
+                    }
                 }
             }
-        
-    
         }
     
         # Else, break loop
         else {
+
+            # Update status
+            $TenantRecord['Status'] = "Complete"
+            $TenantRecord['End'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+            $response = Update-MongoDB -collection "tenants" -Data $TenantRecord
+
             Write-Host ""
             Write-Host "#####################################################"
             Write-Host "################ COLLECTION COMPLETE ################"
@@ -304,9 +412,7 @@ try {
 
 
 finally {
-
     Disconnect-ExchangeOnline -Confirm:$false
-
 }
 
 

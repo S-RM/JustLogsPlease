@@ -37,20 +37,62 @@ function Send-ToMongoDB {
     }
 }
 
+
+function Update-MongoDB {
+    Param(
+        $MongoHost="https://apie3882a5b.azurewebsites.net",
+        $collection,
+        $operation="POST",
+        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Data
+    )
+
+    $RecordId = $Data['_id']
+
+    # Add an updated timestamp
+    $Data['Updated'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
+
+    $url = "${MongoHost}/api/${collection}?code=${Code}&id=${RecordId}"
+    $headers = @{"Content-Type"="application/json"}
+    $body = ConvertTo-Json -InputObject $Data -Depth 20
+
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method $operation -Headers $headers -Body $body
+        return $response
+    }
+    catch {
+        Write-Host "Error sending data to MongoDB: $_"
+        return $null
+    }
+}
+
 function Get-FromMongoDB {
     Param(
         $MongoHost="https://apie3882a5b.azurewebsites.net",
         $collection="chunks",
         $operation="GET",
         $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
-        $Next = ""
+        $Next = "",
+        $Filter = @{}
     )
 
+    # Default params
     $params = "&sort=_id&orderby=asc" # Ensure chunks are processed in order they are created
 
     # Add next page reference if defined
     if($Next -ne ""){ 
         $params = "${params}&next=${Next}"
+    }
+
+    # Add filter if defined
+    $filterQuery = ""
+    if($Filter.Length -gt 0) {
+        $Filter | ForEach-Object {
+            $filterQuery = "${filterQuery}&$($_.Key):$($_.Value)"
+        }
+        
+        # Append to params
+        $params = "${params}${filterQuery}"
     }
 
     # Create the URL
@@ -147,7 +189,8 @@ function Get-UALChunks() {
         $IterationModifier=1,
         $RecordTypes=$RecordTypes,
         [string]$CurrentRecordType="",
-        $Org
+        $Org,
+        $TenantRecord
     )
 
     # TODO: Foreach record type up here instead
@@ -176,6 +219,9 @@ function Get-UALChunks() {
     }
 
     Write-Host "[INFO] -- Total records across tenancy: ${TenantTotalRecords}"
+
+    $TenantRecord['TotalRecords'] = $TenantTotalRecords
+    $response = Update-MongoDB -collection "tenants" -Data $tenantRecord
 
     ############################################
     # RECORD TYPE LOOP
@@ -209,11 +255,14 @@ function Get-UALChunks() {
 
             # Add to our array
             $Chunk = @{
+                Status = "Not Started"
                 Start = $StartDate.ToString('yyyy-MM-ddTHH:mm:ss')
                 End = $EndDate.ToString('yyyy-MM-ddTHH:mm:ss')
                 RecordType = $CurrentRecordType
                 RecordCount = $TotalRecords
                 Tenant = $Org
+                ProcessingStart = ""
+                ProcessingEnd = ""
             }
 
             $response = Send-ToMongoDB -collection "chunks" -Data $Chunk
@@ -291,11 +340,14 @@ function Get-UALChunks() {
         
                     # Add the time period to the array and move on
                     $PreviousChunk = @{
+                        Status = "Not Started"
                         Start = $IterationStart.ToString('yyyy-MM-ddTHH:mm:ss')
                         End = $IterationEnd.ToString('yyyy-MM-ddTHH:mm:ss')
                         RecordType = $CurrentRecordType
                         RecordCount = $IterationRecords
                         Tenant = $Org
+                        ProcessingStart = ""
+                        ProcessingEnd = ""
                     }
 
                     Write-Host ""
@@ -307,7 +359,7 @@ function Get-UALChunks() {
                     ############################################
 
                     # Send to mongodb
-                    Send-ToMongoDB -collection "chunks" -Data $Chunk
+                    Send-ToMongoDB -collection "chunks" -Data $PreviousChunk
 
                     # Increase chunk count
                     $ChunkCount += 1
