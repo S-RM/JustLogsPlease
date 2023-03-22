@@ -3,17 +3,22 @@
 # Assign the array of record types
 $RecordTypes = Get-UALRecordTypes
 
-function Get-MD5Hash([string]$String) {
+function Get-MD5Hash($String) {
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $inputBytes = [System.Text.Encoding]::ASCII.GetBytes($String)
+    $hashBytes = $md5.ComputeHash($inputBytes)
+    $base64String = [System.Convert]::ToBase64String($hashBytes)
+    return $base64String
+}
 
-    $hasher = new-object System.Security.Cryptography.MD5CryptoServiceProvider
-    $toHash = [System.Text.Encoding]::UTF8.GetBytes($String)
-    $hashByteArray = $hasher.ComputeHash($toHash)
-    foreach($byte in $hashByteArray)
-    {
-      $result += "{0:X2}" -f $byte
-    }
-    return $result;
- }
+function Get-SHA256Hash($String) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $inputBytes = [System.Text.Encoding]::UTF8.GetBytes($String)
+    $hashBytes = $sha256.ComputeHash($inputBytes)
+    $base64String = [System.Convert]::ToBase64String($hashBytes)
+    return $base64String
+}
+
 function Send-ToMongoDB {
     Param(
         $MongoHost="https://apie3882a5b.azurewebsites.net",
@@ -359,7 +364,7 @@ function Get-UALChunks() {
                     ############################################
 
                     # Send to mongodb
-                    Send-ToMongoDB -collection "chunks" -Data $PreviousChunk
+                    $response = Send-ToMongoDB -collection "chunks" -Data $PreviousChunk
 
                     # Increase chunk count
                     $ChunkCount += 1

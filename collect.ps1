@@ -118,6 +118,9 @@ Connect-ExchangeOnline `
 }
 else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
+
+    # retrieve org value
+    $Org = Get-OrganizationConfig | Select-Object -ExpandProperty 'Name'
 }
 
 #######################################
@@ -194,6 +197,7 @@ $filter = @{
     Status = "Not Started|Processing"
 }
 
+
 try {
     while ($true) {
 
@@ -261,7 +265,7 @@ try {
                 $ErrorMessage = ""
 
                 while ($true) {
-            
+           
                     ##########################################
                     ### EXECUTE QUERY
                     ##########################################
@@ -298,22 +302,25 @@ try {
                         $UALResponse | ForEach-Object {
         
                             # Calculate ID field
-                            $StringValue = $_.AuditData
                             $LogLine = ($_.AuditData | ConvertFrom-Json -Depth 20)
-                            $id = Get-MD5Hash -String $StringValue
+                            # Not hugely convinced ID is globally unique across all tenants
+                            # Hence adding a few additional fields in there to make it very unlikely
+                            $id = Get-MD5Hash -String "$($LogLine.Id)$($LogLine.tenant)$($LogLine.CreationTime)$($LogLine.RecordType)$($LogLine.Operation)"
                             
                             # Add id to field
                             $LogLine | Add-Member -MemberType NoteProperty -Name '_id' -Value $id -Force
+
                             # Add org to field
                             $LogLine | Add-Member -MemberType NoteProperty -Name 'tenant' -Value $Org -Force
         
                             # Add to batch
                             $LogBatch += $LogLine
                         }
-        
-                        # Send batch to mongo
+
+                        # Submit to mongo
                         $response = Send-ToMongoDB -collection "records" -Data $LogBatch
-            
+
+
                         ##########################################
                         ### CONCLUDE ITERATION
                         ##########################################
@@ -365,6 +372,7 @@ try {
 
                             # Generate a new session id, and add a delay to loop
                             $SessionID = [Guid]::NewGuid().ToString()
+                            $count = 0
                             Start-Sleep -Seconds ($ErrorDelay * ($ErrorCounter + 1))
                             $ErrorCounter += 1
 
