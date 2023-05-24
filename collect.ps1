@@ -26,9 +26,9 @@ param (
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
-if ($Cert -or $AppID -or $Org) {
+if ($Cert -or $AppID) {
     # Check if all of the required parameters are defined
-    if (-not ($Cert -and $AppID -and $Org)) {
+    if (-not ($Cert -and $AppID)) {
         throw "Error: All of the Thumbprint, AppID, and Organization parameters must be defined if any one of them is defined."
     }
     else {
@@ -36,9 +36,9 @@ if ($Cert -or $AppID -or $Org) {
     }
 }
 
-$TMPFILENAME = (Resolve-Path ".\collection.log").Path
-$DATAFILENAME = (Resolve-Path ".\UnifiedAuditLogs.json").Path
-$CHUNKFILENAME = (Resolve-Path ".\chunks.json").Path
+$TMPFILENAME = ".\collection.log"
+$DATAFILENAME = ".\UnifiedAuditLogs.json"
+$CHUNKFILENAME = ".\chunks.json"
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
