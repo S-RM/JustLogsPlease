@@ -1,12 +1,9 @@
 function Get-UALRecordTypes {
 
     $RecordTypes = @(
-        # Critical
         "AzureActiveDirectory",
         "AzureActiveDirectoryAccountLogon",
         "AzureActiveDirectoryStsLogon",
-
-        # Important
         "ExchangeAdmin",
         "ExchangeItem",
         "ExchangeItemGroup",
@@ -15,8 +12,6 @@ function Get-UALRecordTypes {
         "MicrosoftTeamsAdmin",
         "OneDrive",
         "DataInsightsRestApiAudit",
-
-        # Security alerts
         "ThreatIntelligence",
         "ThreatFinder",
         "SecurityComplianceAlerts",
@@ -27,15 +22,11 @@ function Get-UALRecordTypes {
         "ComplianceDLPSharePoint",
         "ComplianceDLPExchange",
         "Quarantine",
-
-        # Misc
         "MailSubmission",
         "ComplianceDLPSharePointClassification",
         "SharePointCommentOperation",
         "DataGovernance",
         "PowerBIAudit",
-
-        # Remainder office
         "SharePointSharingOperation",
         "SharePointListOperation",
         "ExchangeItemAggregated",
@@ -45,7 +36,7 @@ function Get-UALRecordTypes {
         "SharePointListItemOperation",
         "SharePointContentTypeOperation",
         "SharePointFieldOperation",
-        "SharePointFileOperation" # High volume
+        "SharePointFileOperation"
     )
 
     return $RecordTypes
