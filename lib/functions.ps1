@@ -24,7 +24,7 @@ function Send-ToMongoDB {
         $MongoHost="https://apie3882a5b.azurewebsites.net",
         $collection,
         $operation="PUT",
-        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Code="",
         $Data
     )
 
@@ -48,7 +48,7 @@ function Update-MongoDB {
         $MongoHost="https://apie3882a5b.azurewebsites.net",
         $collection,
         $operation="POST",
-        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Code="",
         $Data
     )
 
@@ -76,7 +76,7 @@ function Get-FromMongoDB {
         $MongoHost="https://apie3882a5b.azurewebsites.net",
         $collection="chunks",
         $operation="GET",
-        $Code="lOPFhlfJjsuc3hY1yj3iK_FggB1O2BF-c_8wuwsXSdjjAzFu5ItZPQ==",
+        $Code="",
         $Next = "",
         $Filter = @{}
     )
