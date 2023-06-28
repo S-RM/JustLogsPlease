@@ -3,10 +3,8 @@
     Collect will get the UAL logs and Risky signins from Microsoft 365.
 .DESCRIPTION
     You need to authenticate with a user of the Azure that has permissions
-.PARAMETER output_path
-    Required. Where you want to store the output of the JSON results.
 .EXAMPLE
-    .\collect.ps1 -output_path "C:\Temp"
+    .\collect.ps1
 .NOTES
 #>
 
@@ -30,13 +28,14 @@ param (
     [string]$AppID,
 
     [parameter(Mandatory=$false)]
-    [string]$Org,
+    [string]$Org
 
-    [parameter(mandatory)][string]$output_path
 )
 
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
+
+# Import risk signin module
 Import-Module .\lib\riskyAAD.psm1
 
 $AppAuthentication = $false
@@ -51,10 +50,14 @@ if ($Cert -or $AppID) {
     }
 }
 
+# Set output path to dir of script executing
+$output_path = $PSScriptRoot
+
 if ($(Resolve-Path $output_path) -ne $True) {
     Write-Warning "[-] That path doesn't exist, creating..."
     New-Item -ItemType Directory -Path "$output_path"
 }
+
 $output_path = (Resolve-Path $output_path).Path
 
 $TMPFILENAME = "$output_path\collection.log"
@@ -168,8 +171,10 @@ if($AppAuthentication) {
         -AppID $AppID `
         -Organization $Org `
         -ShowBanner:$false
+
     # Get the Tenant ID
     $acc_context = Connect-AzAccount
+
     # Connect to MS Graph
     Connect-MgGraph `
         -ClientID $AppID `
