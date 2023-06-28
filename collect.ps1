@@ -36,7 +36,10 @@ param (
 . .\lib\functions.ps1
 
 # Import risk signin module
-Import-Module .\lib\riskyAAD.psm1
+Import-Module .\lib\riskyAAD.psm1 -Force
+
+# Import aad user module
+Import-Module .\lib\aadUsers.psm1 -Force
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
@@ -52,25 +55,25 @@ if ($Cert -or $AppID) {
 
 # Set output path to dir of script executing
 $output_path = $PSScriptRoot
-
-if ($(Resolve-Path $output_path) -ne $True) {
-    Write-Warning "[-] That path doesn't exist, creating..."
-    New-Item -ItemType Directory -Path "$output_path"
-}
-
 $output_path = (Resolve-Path $output_path).Path
 
 $TMPFILENAME = "$output_path\collection.log"
 $DATAFILENAME = "$output_path\UnifiedAuditLogs.json"
 $CHUNKFILENAME = "$output_path\chunks.json"
+$ADDLOGONSFILENAME = "$output_path\AADRiskyLogons.json"
+$ADDUSERSFILENAME = "$output_path\AADUsers.json"
+
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
 $chunkFileExists = Test-Path -Path $CHUNKFILENAME
+$aadRiskyFileExists = Test-Path -Path $ADDLOGONSFILENAME
+$aadUsersFileExists = Test-Path -Path $ADDUSERSFILENAME
+
 
 # If we are not resuming
 if(!$Resume) {
-    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists) {
+    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists -or $aadRiskyFileExists -or $aadUsersFileExists) {
         $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
         $deleteChoice = Read-Host -Prompt $deletePrompt
     
@@ -83,6 +86,12 @@ if(!$Resume) {
             }
             if ($chunkFileExists) {
                 Remove-Item -Path $CHUNKFILENAME -Force | Out-Null
+            }
+            if ($aadRiskyFileExists) {
+                Remove-Item -Path $ADDLOGONSFILENAME -Force | Out-Null
+            }
+            if ($aadUsersFileExists) {
+                Remove-Item -Path $ADDUSERSFILENAME -Force | Out-Null
             }
         }
         else {
@@ -183,7 +192,7 @@ if($AppAuthentication) {
 }
 else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
-    Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All"
+    Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All", "User.Read.All"
 }
 
 
@@ -434,18 +443,6 @@ try {
     Write-Host "#####################################################"
     Write-Host ""
 
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "Getting Risky Signins..."
-    Write-Host "#####################################################"
-    Write-Host ""
-    Get-LFRiskySignins -output_path $output_path
-
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "############### RISKY SIGNS COLLECTED ###############"
-    Write-Host "#####################################################"
-    Write-Host ""
 }
 
 finally {
@@ -459,9 +456,33 @@ finally {
     # Close the StreamReader and FileStream
     $LogWriter.Close()
 
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "Getting Risky Signins..."
+    Write-Host "#####################################################"
+    Write-Host ""
+
+    Get-RiskySignins
+
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "Getting AAD Users..."
+    Write-Host "#####################################################"
+    Write-Host ""
+
+    Get-AADUsers
+
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "############### RISKY SIGNS COLLECTED ###############"
+    Write-Host "#####################################################"
+    Write-Host ""
+
     Disconnect-ExchangeOnline -Confirm:$false
 
 }
+
+
 
 
 
