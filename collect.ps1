@@ -1,3 +1,15 @@
+<#
+.SYNOPSIS
+    Collect will get the UAL logs and Risky signins from Microsoft 365.
+.DESCRIPTION
+    You need to authenticate with a user of the Azure that has permissions
+.PARAMETER output_path
+    Required. Where you want to store the output of the JSON results.
+.EXAMPLE
+    .\collect.ps1 -output_path "C:\Temp"
+.NOTES
+#>
+
 param (
     [CmdletBinding()]
     # The number of days to look back for logs. Default is 90 days.
@@ -18,11 +30,14 @@ param (
     [string]$AppID,
 
     [parameter(Mandatory=$false)]
-    [string]$Org
+    [string]$Org,
+
+    [parameter(mandatory)][string]$output_path
 )
 
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
+Import-Module .\lib\riskyAAD.psm1
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
@@ -36,9 +51,15 @@ if ($Cert -or $AppID) {
     }
 }
 
-$TMPFILENAME = ".\collection.log"
-$DATAFILENAME = ".\UnifiedAuditLogs.json"
-$CHUNKFILENAME = ".\chunks.json"
+if ($(Resolve-Path $output_path) -ne $True) {
+    Write-Warning "[-] That path doesn't exist, creating..."
+    New-Item -ItemType Directory -Path "$output_path"
+}
+$output_path = (Resolve-Path $output_path).Path
+
+$TMPFILENAME = "$output_path\collection.log"
+$DATAFILENAME = "$output_path\UnifiedAuditLogs.json"
+$CHUNKFILENAME = "$output_path\chunks.json"
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
@@ -109,7 +130,7 @@ if([string]::IsNullOrEmpty($StartDate) -and [string]::IsNullOrEmpty($EndDate)) {
 #######################################
 
 # Check if the required PowerShell modules are installed.
-$requiredModules = @("ExchangeOnlineManagement", "AzureAD")
+$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph")
 # Get the list of missing modules.
 $missingModules = $requiredModules | Where-Object { !(Get-Module -Name $_ -ListAvailable) }
 
@@ -137,17 +158,27 @@ if ($missingModules) {
 
 # Setup long running session
 $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
+# For risky sign-ins we need the beta MgProfile 
+Select-MgProfile -Name 'beta'
 
 if($AppAuthentication) {
-Connect-ExchangeOnline `
-    -PSSessionOption $PSO `
-    -CertificateThumbPrint $Cert `
-    -AppID $AppID `
-    -Organization $Org `
-    -ShowBanner:$false
+    Connect-ExchangeOnline `
+        -PSSessionOption $PSO `
+        -CertificateThumbPrint $Cert `
+        -AppID $AppID `
+        -Organization $Org `
+        -ShowBanner:$false
+    # Get the Tenant ID
+    $acc_context = Connect-AzAccount
+    # Connect to MS Graph
+    Connect-MgGraph `
+        -ClientID $AppID `
+        -TenantId $acc_context.Context.Tenant.Id `
+        -CertificateThumbprint $Cert
 }
 else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
+    Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All"
 }
 
 
@@ -278,6 +309,7 @@ try {
 
             # If there are no record, continue
             if ($LogObject.RecordCount -eq 0) {
+                Write-Debug "No records in line: $LogLine"
                 continue
             }
             
@@ -397,6 +429,18 @@ try {
     Write-Host "#####################################################"
     Write-Host ""
 
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "Getting Risky Signins..."
+    Write-Host "#####################################################"
+    Write-Host ""
+    Get-LFRiskySignins -output_path $output_path
+
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "############### RISKY SIGNS COLLECTED ###############"
+    Write-Host "#####################################################"
+    Write-Host ""
 }
 
 finally {
