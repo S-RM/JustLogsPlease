@@ -264,6 +264,6 @@ function Write-ToFile {
         $log
     )
 
-    $jsonString = $log | ConvertTo-Json -Compress
+    $jsonString = $log | ConvertTo-Json -Compress -Depth 10
     Add-Content -Path $filename -Value $jsonString
 }

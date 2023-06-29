@@ -1,3 +1,13 @@
+<#
+.SYNOPSIS
+    Collect will get the UAL logs and Risky signins from Microsoft 365.
+.DESCRIPTION
+    You need to authenticate with a user of the Azure that has permissions
+.EXAMPLE
+    .\collect.ps1
+.NOTES
+#>
+
 param (
     [CmdletBinding()]
     # The number of days to look back for logs. Default is 90 days.
@@ -19,10 +29,17 @@ param (
 
     [parameter(Mandatory=$false)]
     [string]$Org
+
 )
 
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
+
+# Import risk signin module
+Import-Module .\lib\riskyAAD.psm1 -Force
+
+# Import aad user module
+Import-Module .\lib\aadUsers.psm1 -Force
 
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
@@ -36,17 +53,27 @@ if ($Cert -or $AppID) {
     }
 }
 
-$TMPFILENAME = ".\collection.log"
-$DATAFILENAME = ".\UnifiedAuditLogs.json"
-$CHUNKFILENAME = ".\chunks.json"
+# Set output path to dir of script executing
+$output_path = $PSScriptRoot
+$output_path = (Resolve-Path $output_path).Path
+
+$TMPFILENAME = "$output_path\collection.log"
+$DATAFILENAME = "$output_path\UnifiedAuditLogs.json"
+$CHUNKFILENAME = "$output_path\chunks.json"
+$ADDLOGONSFILENAME = "$output_path\AADRiskyLogons.json"
+$ADDUSERSFILENAME = "$output_path\AADUsers.json"
+
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
 $chunkFileExists = Test-Path -Path $CHUNKFILENAME
+$aadRiskyFileExists = Test-Path -Path $ADDLOGONSFILENAME
+$aadUsersFileExists = Test-Path -Path $ADDUSERSFILENAME
+
 
 # If we are not resuming
 if(!$Resume) {
-    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists) {
+    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists -or $aadRiskyFileExists -or $aadUsersFileExists) {
         $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
         $deleteChoice = Read-Host -Prompt $deletePrompt
     
@@ -59,6 +86,12 @@ if(!$Resume) {
             }
             if ($chunkFileExists) {
                 Remove-Item -Path $CHUNKFILENAME -Force | Out-Null
+            }
+            if ($aadRiskyFileExists) {
+                Remove-Item -Path $ADDLOGONSFILENAME -Force | Out-Null
+            }
+            if ($aadUsersFileExists) {
+                Remove-Item -Path $ADDUSERSFILENAME -Force | Out-Null
             }
         }
         else {
@@ -109,7 +142,7 @@ if([string]::IsNullOrEmpty($StartDate) -and [string]::IsNullOrEmpty($EndDate)) {
 #######################################
 
 # Check if the required PowerShell modules are installed.
-$requiredModules = @("ExchangeOnlineManagement", "AzureAD")
+$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph")
 # Get the list of missing modules.
 $missingModules = $requiredModules | Where-Object { !(Get-Module -Name $_ -ListAvailable) }
 
@@ -137,17 +170,29 @@ if ($missingModules) {
 
 # Setup long running session
 $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
+# For risky sign-ins we need the beta MgProfile 
+Select-MgProfile -Name 'beta'
 
 if($AppAuthentication) {
-Connect-ExchangeOnline `
-    -PSSessionOption $PSO `
-    -CertificateThumbPrint $Cert `
-    -AppID $AppID `
-    -Organization $Org `
-    -ShowBanner:$false
+    Connect-ExchangeOnline `
+        -PSSessionOption $PSO `
+        -CertificateThumbPrint $Cert `
+        -AppID $AppID `
+        -Organization $Org `
+        -ShowBanner:$false
+
+    # Get the Tenant ID
+    $acc_context = Connect-AzAccount
+
+    # Connect to MS Graph
+    Connect-MgGraph `
+        -ClientID $AppID `
+        -TenantId $acc_context.Context.Tenant.Id `
+        -CertificateThumbprint $Cert
 }
 else {
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
+    Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All", "User.Read.All"
 }
 
 
@@ -278,6 +323,7 @@ try {
 
             # If there are no record, continue
             if ($LogObject.RecordCount -eq 0) {
+                Write-Debug "No records in line: $LogLine"
                 continue
             }
             
@@ -410,9 +456,33 @@ finally {
     # Close the StreamReader and FileStream
     $LogWriter.Close()
 
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "Getting Risky Signins..."
+    Write-Host "#####################################################"
+    Write-Host ""
+
+    Get-RiskySignins
+
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "Getting AAD Users..."
+    Write-Host "#####################################################"
+    Write-Host ""
+
+    Get-AADUsers
+
+    Write-Host ""
+    Write-Host "#####################################################"
+    Write-Host "############### RISKY SIGNS COLLECTED ###############"
+    Write-Host "#####################################################"
+    Write-Host ""
+
     Disconnect-ExchangeOnline -Confirm:$false
 
 }
+
+
 
 
 
