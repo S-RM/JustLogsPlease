@@ -26,6 +26,8 @@ param (
 
 )
 
+#Requires -Version 7.0
+
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
 
@@ -103,17 +105,24 @@ if(!$Resume) {
     # Create guid
     $guid = [guid]::NewGuid().ToString()
 
-    # Define an ordered hashtable to store the answers
-    $incidentInfo = [ordered]@{}
-
-    # Ask questions and store answers
-    $incidentInfo['domain'] = Read-Host "Enter the client's Microsoft 365 domain"
+    # Define an  hashtable to store the answers
+    $incidentInfo = @{}
+    
     $incidentInfo['context'] = Read-Host 'Please provide a summary of the incident'
-    $incidentInfo['incident_identified'] = Read-Host 'What time was the incident first noticed? (Please use format: yyyy-MM-dd HH:mm:ss)'
+    
+    do {
+        $incidentInfo['incident_identified'] = Validate-Date (Read-Host 'What time was the incident first noticed? (Please use format: yyyy-MM-dd HH:mm:ss)')
+    } until ($incidentInfo['incident_identified'])
+    
+
     $incidentInfo['affected_user'] = Read-Host 'Who is the primary affected user?'
     $incidentInfo['ai_consent'] = Read-Host 'Does the client consent to using AI? (Yes/No)'
-    $incident['method'] = "manual"
-    $incident['status'] = "Not started"
+
+    # Ask questions and store answers
+    $incidentInfo['@timestamp'] = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    $incidentInfo['domain'] = $Org
+    $incidentInfo['method'] = "manual"
+    $incidentInfo['status'] = "Not started"
 
     #######################################
     ### Create case file
@@ -174,7 +183,7 @@ if([string]::IsNullOrEmpty($StartDate) -and [string]::IsNullOrEmpty($EndDate)) {
 #######################################
 
 # Check if the required PowerShell modules are installed.
-$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph")
+$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph.Users","Microsoft.Graph.Identity.SignIns")
 # Get the list of missing modules.
 $missingModules = $requiredModules | Where-Object { !(Get-Module -Name $_ -ListAvailable) }
 
@@ -202,8 +211,6 @@ if ($missingModules) {
 
 # Setup long running session
 $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
-# For risky sign-ins we need the beta MgProfile 
-Select-MgProfile -Name 'beta'
 
 # Try app auth first
 try {
@@ -214,21 +221,22 @@ try {
         -Organization $Org `
         -ShowBanner:$false
 
-    # Get the Tenant ID
-    $acc_context = Connect-AzAccount
+    $tenant_id = (Get-ConnectionInformation | Select-Object -First 1).TenantID
 
     # Connect to MS Graph
     Connect-MgGraph `
         -ClientID $AppID `
-        -TenantId $acc_context.Context.Tenant.Id `
+        -TenantId $tenant_id `
         -CertificateThumbprint $Cert
 }
 
 catch {
+    
     # Full back to interative
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
     Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All", "User.Read.All"
 }
+
 
 #######################################
 ### CHUNK TIME PERIODS
@@ -243,6 +251,12 @@ if(!$Resume) {
     Write-Host "Chunking complete! Starting collection..."
     Write-Host "#####################################################"
     Write-Host ""
+
+    # Update Cloud
+    $body = @{
+        "status" = "Collecting records"
+    }
+    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | Convert-ToJSON -Compress)
 }
 
 ### If the switch is set to resume
@@ -539,6 +553,14 @@ finally {
     Write-Host ""
 
     Disconnect-ExchangeOnline -Confirm:$false
+    Disconnect-MgGraph
+
+    # Update case
+    $body = @{
+        "status" = "Collection complete"
+    }
+    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | Convert-ToJSON -Compress)
+
 
 }
 

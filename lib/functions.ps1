@@ -308,3 +308,19 @@ Function Submit-ToLogstash {
         Write-Error "Failed to upload data to Logstash: $_"
     }
 }
+
+function Validate-Date($date) {
+    $formats = @("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd")
+    foreach ($format in $formats) {
+        try {
+            $parsedDate = [DateTime]::ParseExact($date, $format, $null)
+            return $parsedDate.ToString("yyyy-MM-dd HH:mm:ss")
+        }
+        catch {
+            continue
+        }
+    }
+
+    Write-Host "Invalid date format. Please use one of the following formats: yyyy-MM-dd HH:mm:ss, yyyy-MM-dd HH:mm, yyyy-MM-dd"
+    return $null
+}
