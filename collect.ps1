@@ -221,13 +221,7 @@ try {
         -Organization $Org `
         -ShowBanner:$false
 
-    $tenant_id = (Get-ConnectionInformation | Select-Object -First 1).TenantID
-
-    # Connect to MS Graph
-    Connect-MgGraph `
-        -ClientID $AppID `
-        -TenantId $tenant_id `
-        -CertificateThumbprint $Cert
+    $aad_conn = $false
 }
 
 catch {
@@ -256,7 +250,7 @@ if(!$Resume) {
     $body = @{
         "status" = "Collecting records"
     }
-    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | Convert-ToJSON -Compress)
+    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | ConvertTo-JSON -Compress)
 }
 
 ### If the switch is set to resume
@@ -530,27 +524,29 @@ finally {
     # Close the StreamReader and FileStream
     $LogWriter.Close()
 
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "Getting Risky Signins..."
-    Write-Host "#####################################################"
-    Write-Host ""
-
-    Get-RiskySignins
-
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "Getting AAD Users..."
-    Write-Host "#####################################################"
-    Write-Host ""
-
-    Get-AADUsers
-
-    Write-Host ""
-    Write-Host "#####################################################"
-    Write-Host "############### RISKY SIGNS COLLECTED ###############"
-    Write-Host "#####################################################"
-    Write-Host ""
+    if($aad_conn) {
+        Write-Host ""
+        Write-Host "#####################################################"
+        Write-Host "Getting Risky Signins..."
+        Write-Host "#####################################################"
+        Write-Host ""
+    
+        Get-RiskySignins
+    
+        Write-Host ""
+        Write-Host "#####################################################"
+        Write-Host "Getting AAD Users..."
+        Write-Host "#####################################################"
+        Write-Host ""
+    
+        Get-AADUsers
+    
+        Write-Host ""
+        Write-Host "#####################################################"
+        Write-Host "############### RISKY SIGNS COLLECTED ###############"
+        Write-Host "#####################################################"
+        Write-Host ""
+    }
 
     Disconnect-ExchangeOnline -Confirm:$false
     Disconnect-MgGraph
