@@ -549,13 +549,15 @@ finally {
     }
 
     Disconnect-ExchangeOnline -Confirm:$false
-    Disconnect-MgGraph
-
+    if($aad_conn) {
+        Disconnect-MgGraph
+    }
+    
     # Update case
     $body = @{
         "status" = "Collection complete"
     }
-    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | Convert-ToJSON -Compress)
+    Update-Record -index "prod-cases" -id $incidentInfo['id'] -body ($body | ConvertTo-JSON -Compress)
 
 
 }
