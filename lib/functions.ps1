@@ -267,3 +267,44 @@ function Write-ToFile {
     $jsonString = $log | ConvertTo-Json -Compress -Depth 10
     Add-Content -Path $filename -Value $jsonString
 }
+
+Function Update-Record {
+    Param (
+        [Parameter(Mandatory=$false)] [string] $id,
+        [Parameter(Mandatory=$true)] [string] $index,
+        [Parameter(Mandatory=$true)] [PSCustomObject] $body
+    )
+
+    $data_api_url = $env:DATA_API_URL
+    $data_api_secret = $env:DATA_API_SECRET
+
+    $url = "${data_api_url}/${index}?code=${data_api_secret}"
+
+    if ($id -ne "" -and $id -ne $null) {
+        $url += "&id=${id}"
+    }
+
+    Invoke-RestMethod -Method Put -Uri $url -Body $body
+}
+
+Function Submit-ToLogstash {
+
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$jsonBatch
+    )
+
+    $LOGSTASH = $env:LOGSTASH
+
+    # Define header
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add("Content-Type", "application/json")
+
+    try {
+        # Upload the JSON string to the Logstash URL
+        $response = Invoke-RestMethod -Uri $LOGSTASH -Method Post -Body $jsonBatch -Headers $headers
+    }
+    catch {
+        Write-Error "Failed to upload data to Logstash: $_"
+    }
+}

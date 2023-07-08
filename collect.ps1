@@ -22,12 +22,6 @@ param (
     [switch]$Resume,
 
     [parameter(Mandatory=$false)]
-    [string]$Cert,
-
-    [parameter(Mandatory=$false)]
-    [string]$AppID,
-
-    [parameter(Mandatory=$false)]
     [string]$Org
 
 )
@@ -41,16 +35,14 @@ Import-Module .\lib\riskyAAD.psm1 -Force
 # Import aad user module
 Import-Module .\lib\aadUsers.psm1 -Force
 
+# Pull environment variables
+$Cert = $env:Cert
+$AppID = $env:AppID
+
 $AppAuthentication = $false
 # Check if any of the required parameters are defined
-if ($Cert -or $AppID) {
-    # Check if all of the required parameters are defined
-    if (-not ($Cert -and $AppID)) {
-        throw "Error: All of the Thumbprint, AppID, and Organization parameters must be defined if any one of them is defined."
-    }
-    else {
-        $AppAuthentication = $true
-    }
+if ($Cert -and $AppID) {
+    $AppAuthentication = $true
 }
 
 # Set output path to dir of script executing
@@ -62,18 +54,19 @@ $DATAFILENAME = "$output_path\UnifiedAuditLogs.json"
 $CHUNKFILENAME = "$output_path\chunks.json"
 $ADDLOGONSFILENAME = "$output_path\AADRiskyLogons.json"
 $ADDUSERSFILENAME = "$output_path\AADUsers.json"
-
+$INCIDENTCONTEXT = "$output_path\incident_info.json"
 
 $tmpFileExists = Test-Path -Path $TMPFILENAME
 $dataFileExists = Test-Path -Path $DATAFILENAME
 $chunkFileExists = Test-Path -Path $CHUNKFILENAME
 $aadRiskyFileExists = Test-Path -Path $ADDLOGONSFILENAME
 $aadUsersFileExists = Test-Path -Path $ADDUSERSFILENAME
+$contextFileExists = Test-Path -Path $INCIDENTCONTEXT
 
 
 # If we are not resuming
 if(!$Resume) {
-    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists -or $aadRiskyFileExists -or $aadUsersFileExists) {
+    if ($tmpFileExists -or $dataFileExists -or $chunkFileExists -or $aadRiskyFileExists -or $aadUsersFileExists -or $contextFileExists) {
         $deletePrompt = "There are existing collection files. Do you want to delete them and start again? [Y/N] "
         $deleteChoice = Read-Host -Prompt $deletePrompt
     
@@ -93,12 +86,51 @@ if(!$Resume) {
             if ($aadUsersFileExists) {
                 Remove-Item -Path $ADDUSERSFILENAME -Force | Out-Null
             }
+            if ($contextFileExists) {
+                Remove-Item -Path $INCIDENTCONTEXT -Force | Out-Null
+            }
         }
         else {
             Write-Host "Re-run the command using the -Resume flag."
             exit
         }
     }
+
+    #######################################
+    ### Gather onboarding information
+    #######################################
+
+    # Create guid
+    $guid = [guid]::NewGuid().ToString()
+
+    # Define an ordered hashtable to store the answers
+    $incidentInfo = [ordered]@{}
+
+    # Ask questions and store answers
+    $incidentInfo['domain'] = Read-Host "Enter the client's Microsoft 365 domain"
+    $incidentInfo['context'] = Read-Host 'Please provide a summary of the incident'
+    $incidentInfo['incident_identified'] = Read-Host 'What time was the incident first noticed? (Please use format: yyyy-MM-dd HH:mm:ss)'
+    $incidentInfo['affected_user'] = Read-Host 'Who is the primary affected user?'
+    $incidentInfo['ai_consent'] = Read-Host 'Does the client consent to using AI? (Yes/No)'
+    $incident['method'] = "manual"
+    $incident['status'] = "Not started"
+
+    #######################################
+    ### Create case file
+    #######################################
+
+    ### In cloud
+    # Convert the hashtable to a JSON object
+    $jsonBody = $incidentInfo | ConvertTo-Json -Compress
+    Update-Record -index "prod-cases" -id $guid -body $jsonBody
+
+    ### Local
+    # Add id
+    $incidentInfo['id'] = $guid
+    # Write to file
+    $jsonLine = $incidentInfo | ConvertTo-Json
+    $jsonLine | Out-File -FilePath $INCIDENTCONTEXT
+
 }
 
 
@@ -173,7 +205,8 @@ $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
 # For risky sign-ins we need the beta MgProfile 
 Select-MgProfile -Name 'beta'
 
-if($AppAuthentication) {
+# Try app auth first
+try {
     Connect-ExchangeOnline `
         -PSSessionOption $PSO `
         -CertificateThumbPrint $Cert `
@@ -190,11 +223,12 @@ if($AppAuthentication) {
         -TenantId $acc_context.Context.Tenant.Id `
         -CertificateThumbprint $Cert
 }
-else {
+
+catch {
+    # Full back to interative
     Connect-ExchangeOnline -PSSessionOption $PSO -ShowBanner:$false
     Connect-MgGraph -Scopes "IdentityRiskEvent.Read.All", "User.Read.All"
 }
-
 
 #######################################
 ### CHUNK TIME PERIODS
@@ -253,6 +287,14 @@ else {
     if($null -eq $LogObject) {
         Write-Error "Unable to resume operation, please retry without the -Resume flag"
     }
+
+    ### Load context back in
+    # Get the JSON content from the file
+    $jsonContent = Get-Content -Path $INCIDENTCONTEXT -Raw
+
+    # Convert the JSON content back into a PowerShell object
+    $incidentInfo = $jsonContent | ConvertFrom-Json
+
 }
 
 #######################################
@@ -370,13 +412,31 @@ try {
                     $count += $UALResponse.Count       
                     
                     # Send the results to file output
+                    $logBatch = ""
                     $UALResponse | ForEach-Object {
                         $line = $_.AuditData -replace "`n","" -replace "`r","" -replace "  ", ""
                         $LogWriter.WriteLine($line)
+                        
+                        ### Add to cloud submission batch
+                        # Convert to object
+                        $tmpObject = $_.AuditData | ConvertFrom-Json
+                        
+                        # Add required fields
+                        $tmpObject | Add-Member -NotePropertyName "LF_ENV" -NotePropertyValue "prod"
+                        $tmpObject | Add-Member -NotePropertyName "LF_CLIENT" -NotePropertyValue $incidentInfo.domain
+                        $tmpObject | Add-Member -NotePropertyName "LF_CASE_ID" -NotePropertyValue $incidentInfo.id
+    
+                        # Convert back to JSON and add to batch
+                        $jsonString = $tmpObject | ConvertTo-Json -Depth 20 -Compress
+                        $logBatch += "${jsonString}`n"
+
                     }
 
                     # Flush cache
                     $LogWriter.Flush()
+
+                    # Submit to logstash
+                    Submit-ToLogstash -jsonBatch $logBatch
 
                     ##########################################
                     ### CONTRUCT TMP FILE LINE
