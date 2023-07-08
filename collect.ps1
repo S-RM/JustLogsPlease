@@ -26,6 +26,8 @@ param (
 
 )
 
+#Requires -Version 7.0
+
 # Import the functions from the functions.ps1 script.
 . .\lib\functions.ps1
 
@@ -174,7 +176,7 @@ if([string]::IsNullOrEmpty($StartDate) -and [string]::IsNullOrEmpty($EndDate)) {
 #######################################
 
 # Check if the required PowerShell modules are installed.
-$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph")
+$requiredModules = @("ExchangeOnlineManagement", "AzureAD", "PowerShellGet","Microsoft.Graph.Users","Microsoft.Graph.Identity.SignIns")
 # Get the list of missing modules.
 $missingModules = $requiredModules | Where-Object { !(Get-Module -Name $_ -ListAvailable) }
 
@@ -203,7 +205,7 @@ if ($missingModules) {
 # Setup long running session
 $PSO = New-PSSessionOption -IdleTimeout 43200000 # 12 hours
 # For risky sign-ins we need the beta MgProfile 
-Select-MgProfile -Name 'beta'
+# Select-MgProfile -Name 'beta'
 
 # Try app auth first
 try {
@@ -215,12 +217,12 @@ try {
         -ShowBanner:$false
 
     # Get the Tenant ID
-    $acc_context = Connect-AzAccount
+    $tenant_id = (Get-ConnectionInformation | Select-Object -First 1).TenantID
 
     # Connect to MS Graph
     Connect-MgGraph `
         -ClientID $AppID `
-        -TenantId $acc_context.Context.Tenant.Id `
+        -TenantId $tenant_id `
         -CertificateThumbprint $Cert
 }
 
@@ -539,15 +541,6 @@ finally {
     Write-Host ""
 
     Disconnect-ExchangeOnline -Confirm:$false
+    Disconnect-MgGraph
 
 }
-
-
-
-
-
-
-
-
-
-
