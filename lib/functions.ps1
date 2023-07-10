@@ -1,4 +1,4 @@
-. .\lib\records.ps1
+. "$PSScriptRoot\records.ps1"
 
 # Assign the array of record types
 $RecordTypes = Get-UALRecordTypes
