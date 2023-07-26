@@ -275,8 +275,8 @@ Function Update-Record {
         [Parameter(Mandatory=$true)] [PSCustomObject] $body
     )
 
-    $data_api_url = $env:DATA_API_URL
-    $data_api_secret = $env:DATA_API_SECRET
+    $data_api_url = $env:JLP_API_URL
+    $data_api_secret = $env:JLP_API_SECRET
 
     $url = "${data_api_url}/${index}?code=${data_api_secret}"
 

@@ -42,7 +42,7 @@ function Invoke-JustLogsPlease {
     Import-Module "$PSScriptRoot\lib\aadUsers.psm1" -Force
     
     # Pull environment variables
-    $Cert = $env:JLP_Cert
+    $Cert = $env:JLP_CertId
     $AppID = $env:JLP_AppId
     
     $AppAuthentication = $false
